@@ -129,7 +129,27 @@
     ""
   ],
   "_tokens_note": "실측 빈도: N/A 1508건, TBD 858건, TBU 39건, Not required 8건, done 2건.",
-  "category_passthrough": [
+  "known_categories": [
+    "NDA",
+    "New indication",
+    "New posology",
+    "Site addition",
+    "CMC",
+    "Safety/Labelling",
+    "DMF",
+    "New device",
+    "Device variation",
+    "Device GMP",
+    "De-registration",
+    "Launch",
+    "Renewal",
+    "Overseas site registration",
+    "IND",
+    "ODD",
+    "Other"
+  ],
+  "_known_categories_note": "RA plan의 Category 드롭다운 목록(17종). 간트는 이 목록대로 값을 **그대로** 옮긴다 — 접거나 바꾸지 않는다. 이 목록은 검증용이다: 여기 없는 값이 데이터에 있으면 '판독 참고'에 알려 주기만 하고, 값 자체는 손대지 않는다.",
+  "palette_group_passthrough": [
     "NDA",
     "New indication",
     "Site addition",
@@ -137,14 +157,14 @@
     "NDA (variant)",
     "Device"
   ],
-  "category_map": {
+  "palette_group_map": {
     "NDA (Must-Win)": "NDA (variant)",
     "Device variation": "Device",
     "New device": "Device",
     "Device GMP": "Device"
   },
-  "category_fallback": "Others",
-  "_category_note": "간트에 실제로 나타난 값은 7종뿐이다 (Others 135, Site addition 26, New indication 17, NDA 15, NDA (variant) 13, CMC Must-Win 11, Device 2). 반면 RA plan Category는 20종. 즉 passthrough/map에 없는 나머지는 전부 Others로 접힌다. 실측 확인: CMC→Others, Safety/Labelling→Others. Device·NDA (variant)의 원본은 표본 부족이라 추정이며 calibrate로 재확인 필요.",
+  "palette_group_fallback": "Others",
+  "_palette_group_note": "⚠️ 이 셋은 **색 그룹**을 정하는 규칙이지 Category 라벨을 바꾸는 규칙이 아니다. 간트의 Category 열에는 RA plan에 적힌 값이 언제나 그대로 들어간다. 색 그룹이 따로 필요한 이유는 간트 양식의 팔레트가 접힌 이름 7종(Others, NDA, NDA (variant), Site addition, New indication, CMC Must-Win, Device)으로 배워져 있어서다. 이 이름들은 화면·엑셀 어디에도 표시되지 않는다.",
   "draw_prep_period": true,
   "prep_months_by_type": {
     "NDA": 4,
@@ -181,7 +201,7 @@
   "_min_activity_note": "이 날짜 이전에 모든 활동이 끝난 건은 간트에서 뺀다. 타임라인 창이 2025년부터라 어차피 바가 안 그려지고 빈 행만 쌓인다. 판정은 추정 승인일까지 포함하므로, 2024년에 제출하고 아직 심사 중인 건은 남는다. null로 두면 필터를 끈다. 양식의 타임라인 시작연도를 바꾸면 이 값도 같이 바꿀 것.",
   "sort_by": [
     "responsible",
-    "category_source",
+    "category",
     "nda_sub"
   ],
   "_sort_note": "간트 행 정렬. 팀원이 RA plan 아무 데나 새 행을 넣어도 간트에서는 항상 이 순서가 된다. category_source(원본 Category)로 정렬하는 이유는 간트에 찍히는 값이 원본이기 때문이다 — 접힌 이름(category)으로 정렬하면 화면에서 같은 Category가 흩어져 보인다. Record 필드명 사용 가능: responsible, category, category_source, product, project, status, pra_sub, pra_app, nda_sub, nda_app.",

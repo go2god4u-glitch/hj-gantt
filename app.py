@@ -158,8 +158,6 @@ def _payload(result: dict, out_path: Path, out_name: str,
         key = f"{(r['product'] or '').lower()}|{(r['project'] or '').lower()}"
         rows.append({
             **r,
-            # 화면에 보이는 Category는 엑셀에 찍히는 것과 같아야 한다 — 원본 그대로.
-            "category": r.get("category_source") or r.get("category"),
             "bars": _bars(r, months, with_prep),
             "is_new": key in added_keys,
             "is_moved": key in moved_keys,

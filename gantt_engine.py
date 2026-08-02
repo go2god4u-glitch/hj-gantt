@@ -113,6 +113,22 @@ MONTH_LOOKUP.update({str(i): i for i in range(1, 13)})
 # 간트의 두 쌍. 이 순서가 곧 컬럼 순서다.
 PHASES = ("pra", "nda")
 
+# RA plan의 Category 드롭다운 목록 — 팀이 실제로 쓰는 17종, 적힌 순서 그대로.
+#
+# 간트는 이 값을 **그대로** 옮긴다. 접거나 바꾸거나 'Others'로 묶지 않는다.
+# 예전에 20종을 7종으로 접었다가 팀원이 자기가 적은 값을 간트에서 찾지 못하는
+# 일이 있었다. 그래서 원본 유지가 규칙이다.
+#
+# 이 목록의 쓰임은 검증 하나뿐이다: 데이터에 여기 없는 값(예: 'CMC Must-Win')이
+# 있으면 '판독 참고'에 알려 준다. 손입력 오타이거나 목록이 낡았다는 신호다.
+# 알려 주기만 하고 값은 절대 고치지 않는다.
+RA_CATEGORIES = (
+    "NDA", "New indication", "New posology", "Site addition", "CMC",
+    "Safety/Labelling", "DMF", "New device", "Device variation", "Device GMP",
+    "De-registration", "Launch", "Renewal", "Overseas site registration",
+    "IND", "ODD", "Other",
+)
+
 
 def load_config(path: str | Path | None = None) -> dict:
     with open(Path(path) if path else DEFAULT_CONFIG_PATH, encoding="utf-8") as f:
@@ -398,8 +414,11 @@ class Record:
     source_row: int
     responsible: str
     product: str
-    category_source: str
+    # RA plan에 적힌 Category. 간트에 그대로 찍히는 값은 언제나 이것 하나다.
     category: str
+    # 색을 고르기 위해서만 쓰는 내부 키 (양식 팔레트가 접힌 이름으로 배워져
+    # 있어서 필요하다). 셀에 쓰이지 않는다 — 이름이 'category'가 아닌 이유다.
+    color_group: str
     project: str
     status: str
     pra_sub: date | None = None
@@ -483,27 +502,27 @@ def _choose(actual: DateValue, planned: DateValue, reject_partial: bool,
     return None, "없음"
 
 
-def _std_type(category_source: str, config: dict) -> str | None:
+def _std_type(category: str, config: dict) -> str | None:
     """RA plan Category(20종) → 팀 표준 유형(5종). 기간 표를 찾는 열쇠."""
-    low = _low(category_source)
+    low = _low(category)
     return {k.lower(): v for k, v in config.get("review_type_map", {}).items()}.get(low)
 
 
-def prep_months(category_source: str, config: dict) -> int:
+def prep_months(category: str, config: dict) -> int:
     """
     준비기간(연한 색 바) 길이. 자료 인도 → 제출까지 걸리는 개월 수.
 
     팀이 준 표 기준: NDA 4개월, 나머지 표준 유형은 3개월. 표에 없는 Category는
     default_prep_months.
     """
-    std = _std_type(category_source, config)
+    std = _std_type(category, config)
     table = {k.lower(): v for k, v in config.get("prep_months_by_type", {}).items()}
     if std and _low(std) in table:
         return int(table[_low(std)])
     return int(config.get("default_prep_months", 3))
 
 
-def review_months(category_source: str, config: dict) -> int:
+def review_months(category: str, config: dict) -> int:
     """
     승인일이 아직 없는 건의 검토기간(개월). 팀이 준 표준 소요기간 표를 쓴다.
 
@@ -511,7 +530,7 @@ def review_months(category_source: str, config: dict) -> int:
     review_type_map으로 한 번 접은 뒤 개월 수를 찾는다. 표에 없는 유형은
     default_review_months.
     """
-    std = _std_type(category_source, config)
+    std = _std_type(category, config)
     table = {k.lower(): v for k, v in config.get("review_months_by_type", {}).items()}
     if std and _low(std) in table:
         return int(table[_low(std)])
@@ -521,9 +540,11 @@ def review_months(category_source: str, config: dict) -> int:
 def build_records(ws: Worksheet, cols: SourceColumns, config: dict) -> list[Record]:
     tokens = config.get("unresolved_tokens", ["TBD"])
     reject = bool(config.get("reject_partial_dates", True))
-    passthrough = {c.lower() for c in config.get("category_passthrough", [])}
-    explicit = {k.lower(): v for k, v in config.get("category_map", {}).items()}
-    fallback = config.get("category_fallback", "Others")
+    # ⚠️ 아래 셋은 **색 그룹**을 정하는 규칙이지 Category 라벨을 바꾸는 규칙이
+    # 아니다. 간트에 찍히는 Category는 언제나 RA plan 원본 그대로다.
+    passthrough = {c.lower() for c in config.get("palette_group_passthrough", [])}
+    explicit = {k.lower(): v for k, v in config.get("palette_group_map", {}).items()}
+    fallback = config.get("palette_group_fallback", "Others")
     name_mode = config.get("project_name_mode", "verbatim")
     max_chars = int(config.get("project_name_max_chars", 60))
 
@@ -576,13 +597,14 @@ def build_records(ws: Worksheet, cols: SourceColumns, config: dict) -> list[Reco
             est[f"{ph}_app_est"] = (add_months(sub, months)
                                     if sub and not app_ else None)
 
+        # 색 그룹만 정한다. cat_src(원본 Category)는 여기서 절대 바뀌지 않는다.
         low = cat_src.lower()
         if low in explicit:
-            category = explicit[low]
+            color_group = explicit[low]
         elif low in passthrough:
-            category = cat_src
+            color_group = cat_src
         else:
-            category = fallback
+            color_group = fallback
 
         display = project
         if name_mode == "truncate" and len(project) > max_chars:
@@ -604,8 +626,8 @@ def build_records(ws: Worksheet, cols: SourceColumns, config: dict) -> list[Reco
             source_row=r,
             responsible=resp,
             product=product,
-            category_source=cat_src,
-            category=category,
+            category=cat_src,
+            color_group=color_group,
             project=display,
             status=status,
             lead_months=lead,
@@ -637,7 +659,21 @@ def read_ra_plan(path: str | Path, config: dict,
                 "시트명을 지정하거나 config.json의 column_aliases를 확인하세요."
             )
     cols = detect_source_columns(ws, config)
-    return build_records(ws, cols, config), cols, ws.title
+    records = build_records(ws, cols, config)
+
+    # RA plan의 Category 드롭다운 목록에 없는 값이 섞여 있으면 알려 준다.
+    # 값을 고치지는 않는다 — 간트에는 적힌 그대로 나가야 하기 때문이다.
+    # 다만 'CMC Must-Win'처럼 목록에 없는 표기는 손입력 오타이거나 목록이
+    # 낡았다는 신호라서, 사람이 한 번 보고 판단할 수 있게 남긴다.
+    known = {_low(c) for c in config.get("known_categories") or RA_CATEGORIES}
+    if known:
+        unknown = sorted({r.category for r in records
+                          if r.category and _low(r.category) not in known})
+        if unknown:
+            cols.notes.append(
+                "Category 목록에 없는 값 " + str(len(unknown)) + "종: "
+                + ", ".join(unknown) + " (값은 그대로 간트에 씁니다)")
+    return records, cols, ws.title
 
 
 # ───────────────────────────────────────────────────────────────────────
@@ -1025,27 +1061,27 @@ def resolve_fills(rec: Record, config: dict,
     """
     이 행을 칠할 색 한 쌍(준비, 검토)을 정한다.
 
-    찾는 순서가 중요하다. 간트에 적히는 Category는 **원본 그대로**(category_source)
-    인데, 내장 양식의 팔레트는 접힌 이름(category, 예: Others)으로 배워져 있다.
-    그래서 원본 이름으로 먼저 찾고, 없으면 접힌 이름으로 찾는다.
+    찾는 순서가 중요하다. 간트에 적히는 Category는 **RA plan 원본 그대로**인데,
+    내장 양식의 팔레트는 접힌 이름(color_group, 예: Others)으로 배워져 있다.
+    그래서 원본 Category로 먼저 찾고, 없으면 색 그룹으로 찾는다.
 
-      · 내장 빈 양식     → 원본 이름 없음 → 접힌 이름으로 적중 (기존 색 유지)
+      · 내장 빈 양식     → 원본 이름 없음 → 색 그룹으로 적중 (기존 색 유지)
       · 이 앱이 만든 간트를 다시 양식으로 올림
                         → 원본 이름으로 적중 (사용자가 칠한 색을 그대로 배운다)
 
     이 함수 하나로 엑셀 채색과 화면 미리보기가 같은 답을 쓰게 만든다.
     두 군데서 따로 계산하면 언젠가 반드시 어긋난다.
     """
-    learned = (palette.get(_low(rec.category_source))
-               or palette.get(_low(rec.category))
+    learned = (palette.get(_low(rec.category))
+               or palette.get(_low(rec.color_group))
                or {})
 
     # 예비 색도 같은 순서로 찾는다. _config_fills는 못 찾아도 상태색·기본색을
     # 돌려주므로 "못 찾았다"를 반환값으로는 알 수 없다. 그래서 category_colors에
     # 실제로 키가 있는지를 먼저 보고 고른다.
     known = {k.lower() for k in config.get("category_colors", {})}
-    fb_cat = (rec.category_source if _low(rec.category_source) in known
-              else rec.category)
+    fb_cat = (rec.category if _low(rec.category) in known
+              else rec.color_group)
     fb_prep, fb_review = _config_fills(rec.status, fb_cat, config)
     return learned.get("prep", fb_prep), learned.get("review", fb_review)
 
@@ -1231,7 +1267,7 @@ def write_into_template(template_path, records: list[Record], output_path,
         # 색을 고를 때만 쓰고 셀에는 쓰지 않는다 — 팀원이 자기가 적은 값을
         # 간트에서 그대로 찾을 수 있어야 하기 때문이다.
         "responsible": lambda x: x.responsible,
-        "category": lambda x: x.category_source,
+        "category": lambda x: x.category,
         "product": lambda x: x.product, "project": lambda x: x.project,
         "status": lambda x: x.status,
         "pra_sub": lambda x: x.pra_sub, "pra_app": lambda x: x.pra_app,
@@ -1289,7 +1325,7 @@ def write_into_template(template_path, records: list[Record], output_path,
     theme_rgb = read_theme_colors(wb)
     css_palette: dict[str, dict[str, str]] = {}
     for rec in records:
-        cat = _low(rec.category_source)
+        cat = _low(rec.category)
         if not cat or cat in css_palette:
             continue
         p, rv = resolve_fills(rec, config, palette)

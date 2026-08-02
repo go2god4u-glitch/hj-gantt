@@ -32,11 +32,21 @@ failures: list[str] = []
 
 
 def check(label: str, got, want) -> None:
+    """
+    한 가지를 확인한다. 어긋나면 **바로 실패시킨다**.
+
+    예전에는 어긋난 것을 failures 리스트에 모아 두기만 하고 assert를 하지
+    않았다. main()으로 직접 돌릴 때는 마지막에 요약이 떠서 보였지만,
+    pytest로 돌리면 각 test_* 함수가 예외 없이 끝나 **무조건 통과**했다.
+    실제로 Category 규칙을 바꾼 뒤에도 "10 passed"가 나왔다. 실패를 잡지
+    못하는 테스트는 없는 것보다 나쁘다 — 안전하다는 착각을 주기 때문이다.
+    """
     if got == want:
         print(f"  ✅ {label}")
-    else:
-        print(f"  ❌ {label}\n       기대: {want}\n       실제: {got}")
-        failures.append(label)
+        return
+    print(f"  ❌ {label}\n       기대: {want}\n       실제: {got}")
+    failures.append(label)
+    raise AssertionError(f"{label} — 기대 {want!r}, 실제 {got!r}")
 
 
 def section(n: str) -> None:
@@ -118,25 +128,38 @@ def test_responsible_column() -> None:
     check("주의 메시지 남김", any("Responsible" in n for n in cols.notes), True)
 
 
-def test_category_remap() -> None:
-    section("6] Category 변환")
+def test_category_is_verbatim() -> None:
+    """
+    Category는 RA plan에 적힌 그대로 넘어와야 한다 — 접히면 안 된다.
+
+    예전에는 20종을 7종으로 접어 'Others' 같은 이름을 만들어 냈다. 팀원이
+    자기가 적은 값을 간트에서 찾을 수 없었다. 접힌 이름은 이제 색을 고르는
+    color_group으로만 살아 있고, 어디에도 표시되지 않는다.
+    """
+    section("6] Category — 원본 그대로")
     recs, _, _ = read_ra_plan(RA_PLAN, load_config())
     by_product = {r.product: r for r in recs}
-    check("Safety/Labelling → Others", by_product["Product-D"].category, "Others")
-    check("CMC Must-Win → 유지", by_product["Product-B"].category, "CMC Must-Win")
-    check("New indication → 유지", by_product["Product-E"].category, "New indication")
-    check("NDA → 유지", by_product["Product-F"].category, "NDA")
-    check("Site addition → 유지", by_product["Product-G"].category, "Site addition")
-    check("리드타임은 원본 Category 기준 (CMC Must-Win=4개월)",
-          by_product["Product-B"].lead_months, 4)
+    for prod, want in (("Product-D", "Safety/Labelling"),
+                       ("Product-B", "CMC Must-Win"),
+                       ("Product-E", "New indication"),
+                       ("Product-F", "NDA"),
+                       ("Product-G", "Site addition")):
+        check(f"{prod} Category 원본 유지", by_product[prod].category, want)
+
+    check("접힌 이름은 color_group에만 남는다",
+          by_product["Product-D"].color_group, "Others")
+    check("Category 어디에도 'Others'가 없다",
+          [r.category for r in recs if r.category == "Others"], [])
 
 
 def test_prep_bar() -> None:
     section("7] 준비기간 계산")
     recs, _, _ = read_ra_plan(RA_PLAN, load_config())
     r = next(x for x in recs if x.product == "Product-B")
-    # CMC Must-Win = 4개월, PRA Sub = 2025-12-23 → 준비 시작 2025-08-23
-    check("Product-B PRA 준비 시작", r.pra_prep, date(2025, 8, 23))
+    # CMC Must-Win → CMC variation = 3개월, PRA Sub = 2025-12-23 → 2025-09-23
+    check("Product-B PRA 준비 시작", r.pra_prep, date(2025, 9, 23))
+    rn = next(x for x in recs if x.category == "NDA")
+    check("NDA만 4개월", (rn.nda_sub - rn.nda_prep).days > 100, True)
 
 
 def test_tint() -> None:
@@ -202,7 +225,7 @@ def main() -> int:
         return 2
 
     for fn in (test_date_parsing, test_add_months, test_ground_truth,
-               test_pair_separation, test_responsible_column, test_category_remap,
+               test_pair_separation, test_responsible_column, test_category_is_verbatim,
                test_prep_bar, test_tint, test_generate, test_diff_and_sort):
         fn()
 
