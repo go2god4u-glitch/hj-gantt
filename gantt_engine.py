@@ -92,7 +92,7 @@ import re
 import shutil
 from copy import copy
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -120,6 +120,32 @@ def load_config(path: str | Path | None = None) -> dict:
 
 
 def _norm(v: Any) -> str:
+    """
+    셀 값을 사람이 읽는 문자열로.
+
+    그냥 str()을 씌우면 안 된다. 엑셀에서 온 값은 문자열이 아닌 것이 섞여 있고,
+    파이썬 기본 표현이 그대로 간트에 박힌다. 실제로 겪은 것들:
+
+      · 셀 서식이 '시간'인 빈 칸  → time(0, 0)      → "00:00:00"
+      · 날짜만 있는 칸           → datetime(자정)   → "2025-01-01 00:00:00"
+      · 숫자로 저장된 제품 코드   → 1.0             → "1.0"
+
+    Project 칸에 "00:00:00"이 찍혀 나온 것이 이 경우다. 값이 없다는 뜻이므로
+    빈칸으로 돌린다. 시간이 실제로 들어 있을 때만 시:분을 남긴다.
+    """
+    if v is None:
+        return ""
+    if isinstance(v, datetime):
+        return (v.strftime("%Y-%m-%d") if v.time() == time(0, 0)
+                else v.strftime("%Y-%m-%d %H:%M"))
+    if isinstance(v, date):
+        return v.strftime("%Y-%m-%d")
+    if isinstance(v, time):
+        return "" if v == time(0, 0) else v.strftime("%H:%M")
+    if isinstance(v, timedelta):
+        return "" if v == timedelta(0) else str(v)
+    if isinstance(v, float) and v.is_integer():
+        return str(int(v))                     # 1.0 → "1"
     return re.sub(r"\s+", " ", str(v or "")).strip()
 
 
@@ -926,6 +952,41 @@ def _config_fills(status: str, category: str, config: dict) -> tuple[PatternFill
     return PatternFill("solid", fgColor=d[0]), PatternFill("solid", fgColor=d[1])
 
 
+def draw_prep_period(config: dict) -> bool:
+    """준비기간(연한 색) 바를 그릴 것인가. 기본은 그리지 않는다."""
+    return bool(config.get("draw_prep_period", False))
+
+
+def resolve_fills(rec: Record, config: dict,
+                  palette: dict) -> tuple[PatternFill, PatternFill]:
+    """
+    이 행을 칠할 색 한 쌍(준비, 검토)을 정한다.
+
+    찾는 순서가 중요하다. 간트에 적히는 Category는 **원본 그대로**(category_source)
+    인데, 내장 양식의 팔레트는 접힌 이름(category, 예: Others)으로 배워져 있다.
+    그래서 원본 이름으로 먼저 찾고, 없으면 접힌 이름으로 찾는다.
+
+      · 내장 빈 양식     → 원본 이름 없음 → 접힌 이름으로 적중 (기존 색 유지)
+      · 이 앱이 만든 간트를 다시 양식으로 올림
+                        → 원본 이름으로 적중 (사용자가 칠한 색을 그대로 배운다)
+
+    이 함수 하나로 엑셀 채색과 화면 미리보기가 같은 답을 쓰게 만든다.
+    두 군데서 따로 계산하면 언젠가 반드시 어긋난다.
+    """
+    learned = (palette.get(_low(rec.category_source))
+               or palette.get(_low(rec.category))
+               or {})
+
+    # 예비 색도 같은 순서로 찾는다. _config_fills는 못 찾아도 상태색·기본색을
+    # 돌려주므로 "못 찾았다"를 반환값으로는 알 수 없다. 그래서 category_colors에
+    # 실제로 키가 있는지를 먼저 보고 고른다.
+    known = {k.lower() for k in config.get("category_colors", {})}
+    fb_cat = (rec.category_source if _low(rec.category_source) in known
+              else rec.category)
+    fb_prep, fb_review = _config_fills(rec.status, fb_cat, config)
+    return learned.get("prep", fb_prep), learned.get("review", fb_review)
+
+
 def _paint_row(ws: Worksheet, row: int, rec: Record, month_cols: dict[int, date],
                config: dict, palette: dict) -> None:
     """
@@ -933,18 +994,20 @@ def _paint_row(ws: Worksheet, row: int, rec: Record, month_cols: dict[int, date]
 
     PRA와 NDA 두 구간을 각각 그린다. 겹치면 검토(진한색)가 준비(연한색)를
     덮는다 — 진행된 사실이 계획보다 우선이기 때문.
+
+    준비기간은 기본적으로 그리지 않는다(`draw_prep_period`). 그 길이는 실측이
+    아니라 규제 관행에서 뽑은 추정치라, 그려 놓으면 사람이 확정된 일정으로
+    읽는다. 확실하지 않은 것을 확실한 것처럼 보이게 하느니 비워 둔다.
     """
-    learned = palette.get(rec.category.lower()) or {}
-    fb_prep, fb_review = _config_fills(rec.status, rec.category, config)
-    prep_fill = learned.get("prep", fb_prep)
-    review_fill = learned.get("review", fb_review)
+    prep_fill, review_fill = resolve_fills(rec, config, palette)
+    with_prep = draw_prep_period(config)
 
     spans_prep, spans_review = [], []
     for ph in PHASES:
         sub = getattr(rec, f"{ph}_sub")
         app = getattr(rec, f"{ph}_app")
         prep = getattr(rec, f"{ph}_prep")
-        if prep and sub:
+        if with_prep and prep and sub:
             spans_prep.append((prep, sub))
         if sub and app:
             spans_review.append((sub, app))
@@ -1101,7 +1164,11 @@ def write_into_template(template_path, records: list[Record], output_path,
             cell.fill = PatternFill(fill_type=None)
 
     getters = {
-        "responsible": lambda x: x.responsible, "category": lambda x: x.category,
+        # Category는 RA plan에 적힌 것을 그대로 쓴다. 접힌 이름(category)은
+        # 색을 고를 때만 쓰고 셀에는 쓰지 않는다 — 팀원이 자기가 적은 값을
+        # 간트에서 그대로 찾을 수 있어야 하기 때문이다.
+        "responsible": lambda x: x.responsible,
+        "category": lambda x: x.category_source,
         "product": lambda x: x.product, "project": lambda x: x.project,
         "status": lambda x: x.status,
         "pra_sub": lambda x: x.pra_sub, "pra_app": lambda x: x.pra_app,
@@ -1150,14 +1217,18 @@ def write_into_template(template_path, records: list[Record], output_path,
     wb.save(output_path)
     months = sorted(layout.month_cols.values())
 
-    # 미리보기가 엑셀과 똑같은 색을 보여줄 수 있도록 팔레트를 화면용 색으로 변환
+    # 미리보기가 엑셀과 똑같은 색을 보여줄 수 있도록 팔레트를 화면용 색으로 변환.
+    # 키는 화면에 실제로 찍히는 Category(원본 그대로)로 맞춘다. 채색과 같은
+    # resolve_fills를 써서 뽑으므로 미리보기 색과 엑셀 색이 어긋날 수 없다.
     theme_rgb = read_theme_colors(wb)
     css_palette = palette_to_css(palette, theme_rgb)
-    for cat in {r.category.lower() for r in records}:
-        if cat not in css_palette:      # 팔레트에 없어 예비색으로 칠해진 Category
-            p, rv = _config_fills("", cat, config)
-            css_palette[cat] = {"prep": fill_to_css(p, theme_rgb) or "#DDDDDD",
-                                "review": fill_to_css(rv, theme_rgb) or "#999999"}
+    for rec in records:
+        cat = _low(rec.category_source)
+        if cat in css_palette:
+            continue
+        p, rv = resolve_fills(rec, config, palette)
+        css_palette[cat] = {"prep": fill_to_css(p, theme_rgb) or "#DDDDDD",
+                            "review": fill_to_css(rv, theme_rgb) or "#999999"}
 
     return {
         "mode": "template",

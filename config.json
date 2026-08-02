@@ -1,50 +1,142 @@
 {
   "_comment": "모든 판독/변환 규칙의 단일 출처. 코드를 고치지 말고 이 파일을 고치세요. 각 항목의 실측 근거는 _reference/SOURCE_NOTES.md 참조.",
-
   "column_aliases": {
-    "responsible": ["Responsible", "담당자", "담당"],
-    "product": ["Product", "제품", "제품명"],
-    "category": ["Category", "구분", "유형", "Type"],
-    "project": ["Project", "과제", "프로젝트", "Description"],
-    "status": ["Status", "상태", "진행상태"],
-    "planned_submission": ["Planned Submission", "Planned Sub", "계획 제출"],
-    "actual_submission": ["Actual Submission", "Actual Sub", "실제 제출"],
-    "planned_approval": ["Planned Approval", "Planned App", "계획 승인"],
-    "actual_approval": ["Actual Approval", "Actual App", "실제 승인"]
+    "responsible": [
+      "Responsible",
+      "담당자",
+      "담당"
+    ],
+    "product": [
+      "Product",
+      "제품",
+      "제품명"
+    ],
+    "category": [
+      "Category",
+      "구분",
+      "유형",
+      "Type"
+    ],
+    "project": [
+      "Project",
+      "과제",
+      "프로젝트",
+      "Description"
+    ],
+    "status": [
+      "Status",
+      "상태",
+      "진행상태"
+    ],
+    "planned_submission": [
+      "Planned Submission",
+      "Planned Sub",
+      "계획 제출"
+    ],
+    "actual_submission": [
+      "Actual Submission",
+      "Actual Sub",
+      "실제 제출"
+    ],
+    "planned_approval": [
+      "Planned Approval",
+      "Planned App",
+      "계획 승인"
+    ],
+    "actual_approval": [
+      "Actual Approval",
+      "Actual App",
+      "실제 승인"
+    ]
   },
-
   "responsible_prefer_marker": "20260608",
   "_responsible_note": "RA plan에는 Responsible 컬럼이 둘이다 (A='Responsible ~20260607' 구담당, B='Responsible 20260608~' 현담당). 이 문자열이 들어간 쪽을 쓴다. 실측 결과 간트는 B열과 5/5 일치. 담당자 개편이 또 일어나면 이 값만 새 날짜로 바꾸면 된다.",
-
   "group_titles": {
-    "pra": ["Pre-review", "사전검토", "Prereview", "PRA"],
-    "nda": ["NDA or Variation", "NDA or variations", "NDA", "Variation", "본제출"]
+    "pra": [
+      "Pre-review",
+      "사전검토",
+      "Prereview",
+      "PRA"
+    ],
+    "nda": [
+      "NDA or Variation",
+      "NDA or variations",
+      "NDA",
+      "Variation",
+      "본제출"
+    ]
   },
   "_group_note": "RA plan의 날짜 8칸을 두 그룹으로 가르는 기준. 헤더 위 병합된 제목에서 찾는다. 실물: K3:N3='Pre-review (사전검토 별도 하는 경우)', O3:R3='NDA or Variation (One step)'.",
-
   "template_aliases": {
-    "responsible": ["Responsible", "담당자"],
-    "category": ["Category", "구분"],
-    "product": ["Product", "제품"],
-    "project": ["Project", "과제"],
-    "status": ["Status", "상태"],
-    "sub": ["Sub", "제출"],
-    "app": ["App", "승인"],
-    "pra_group": ["PRA", "Pre-review", "사전검토"],
-    "nda_group": ["NDA or variations", "NDA or Variation", "NDA", "본제출"]
+    "responsible": [
+      "Responsible",
+      "담당자"
+    ],
+    "category": [
+      "Category",
+      "구분"
+    ],
+    "product": [
+      "Product",
+      "제품"
+    ],
+    "project": [
+      "Project",
+      "과제"
+    ],
+    "status": [
+      "Status",
+      "상태"
+    ],
+    "sub": [
+      "Sub",
+      "제출"
+    ],
+    "app": [
+      "App",
+      "승인"
+    ],
+    "pra_group": [
+      "PRA",
+      "Pre-review",
+      "사전검토"
+    ],
+    "nda_group": [
+      "NDA or variations",
+      "NDA or Variation",
+      "NDA",
+      "본제출"
+    ]
   },
   "_template_note": "간트 양식에서 컬럼을 찾는 이름들. 실물 양식: A=Responsible B=Category C=Product D=Project E,F=PRA Sub/App G,H=NDA Sub/App I=Status J~=월그리드(2025-01~2028-12). Sub/App이 두 쌍이므로 pra_group/nda_group 제목으로 좌우를 가른다.",
-
   "reject_partial_dates": true,
   "_reject_partial_dates_note": "'2027/01', '2026 3Q', '2026'처럼 일(日)이 없는 값은 '아직 확정 안 됨'으로 보고 확정 날짜를 우선한다. RA plan 2행의 형식 안내가 'TBD, YYYY nQ, YYYY-MM-DD'이므로 이 표기들은 공식 허용된 미확정 표기다. 검증 근거: 기준행(충전라인 신설)에서 NDA Planned='2027/01'을 건너뛰어야 실제 간트값(2026-08-31)이 재현된다.",
-
-  "completed_statuses": ["Completed"],
+  "completed_statuses": [
+    "Completed"
+  ],
   "_completed_note": "제출일은 언제나 Actual 우선이지만, 승인일은 이 목록에 든 상태일 때만 Actual을 먼저 본다. 아직 승인 전인 건(Ongoing/Planned/Pending)은 '언제 승인될 예정인가'가 답이라 Planned가 우선이다. 검증 근거: 기준행(충전라인 신설)(Ongoing) — PreRev Planned App=2026-08-31 / Actual App=2026-05-06인데 실제 간트의 PRA App은 2026-08-31.",
-
-  "unresolved_tokens": ["TBD", "TBA", "TBU", "N/A", "NA", "Not required", "done", "Done", "-", "미정", ""],
+  "unresolved_tokens": [
+    "TBD",
+    "TBA",
+    "TBU",
+    "N/A",
+    "NA",
+    "Not required",
+    "done",
+    "Done",
+    "-",
+    "미정",
+    ""
+  ],
   "_tokens_note": "실측 빈도: N/A 1508건, TBD 858건, TBU 39건, Not required 8건, done 2건.",
-
-  "category_passthrough": ["NDA", "New indication", "Site addition", "CMC Must-Win", "NDA (variant)", "Device"],
+  "category_passthrough": [
+    "NDA",
+    "New indication",
+    "Site addition",
+    "CMC Must-Win",
+    "NDA (variant)",
+    "Device"
+  ],
   "category_map": {
     "NDA (Must-Win)": "NDA (variant)",
     "Device variation": "Device",
@@ -53,7 +145,8 @@
   },
   "category_fallback": "Others",
   "_category_note": "간트에 실제로 나타난 값은 7종뿐이다 (Others 135, Site addition 26, New indication 17, NDA 15, NDA (variant) 13, CMC Must-Win 11, Device 2). 반면 RA plan Category는 20종. 즉 passthrough/map에 없는 나머지는 전부 Others로 접힌다. 실측 확인: CMC→Others, Safety/Labelling→Others. Device·NDA (variant)의 원본은 표본 부족이라 추정이며 calibrate로 재확인 필요.",
-
+  "draw_prep_period": false,
+  "_draw_prep_note": "준비기간(연한 색) 바를 그릴지. 기본 false — 아래 lead_months_by_category는 실측이 아니라 규제 관행에서 뽑은 추정치라, 그려 놓으면 사람이 확정된 일정으로 읽는다. calibrate로 실제 간트의 연한 바 시작점을 재서 값을 교체한 뒤에 true로 켤 것.",
   "lead_months_by_category": {
     "NDA": 12,
     "NDA (Must-Win)": 12,
@@ -68,47 +161,144 @@
   },
   "default_lead_months": 3,
   "_lead_note": "준비기간(연한색 바) 길이. ⚠️ 실측값이 아니라 규제 관행 기준 초안이다. 실제 간트에서 연한 바가 제출일 몇 개월 전에 시작하는지 재보고 이 값을 교체할 것. 리드타임은 변환 후가 아니라 원본 Category 기준으로 적용된다.",
-
-  "sort_by": ["responsible", "category", "nda_sub"],
-  "_sort_note": "간트 행 정렬. 팀원이 RA plan 아무 데나 새 행을 넣어도 간트에서는 항상 이 순서가 된다. Record 필드명 사용 가능: responsible, category, product, project, status, pra_sub, pra_app, nda_sub, nda_app.",
-
+  "sort_by": [
+    "responsible",
+    "category_source",
+    "nda_sub"
+  ],
+  "_sort_note": "간트 행 정렬. 팀원이 RA plan 아무 데나 새 행을 넣어도 간트에서는 항상 이 순서가 된다. category_source(원본 Category)로 정렬하는 이유는 간트에 찍히는 값이 원본이기 때문이다 — 접힌 이름(category)으로 정렬하면 화면에서 같은 Category가 흩어져 보인다. Record 필드명 사용 가능: responsible, category, category_source, product, project, status, pra_sub, pra_app, nda_sub, nda_app.",
   "project_name_mode": "verbatim",
   "_project_name_note": "verbatim=원본 그대로 / truncate=project_name_max_chars 초과분 자르기. 실물 간트의 과제명은 사람이 손으로 줄인 것이라 코드로 재현할 수 없다. 그래서 원본 그대로가 기본값이다.",
   "project_name_max_chars": 60,
-
   "_colors_note": "⚠️ 색은 코드가 만들어내지 않는다. 아래 category_palette는 실물 간트 파일에서 tools/make_blank_template.py로 **추출한 실제 색**이다(theme index + tint). 내장 양식은 데이터가 비워져 있어 배울 바가 없으므로 이 값을 쓴다. 양식에 바가 남아 있으면 그쪽에서 배운 색이 우선한다. 실측 근거: 색조(hue)는 Category가 정하고(Others=theme9 90%, NDA=theme7 95%, Site addition=theme6 100%, New indication=theme6 100%, CMC Must-Win=theme6 91%), 진하기(tint)가 준비(0.8 연함)/검토(0.4~0.6 진함)를 가른다.",
-
   "category_palette": {
-    "others":         { "prep": { "theme": 9, "tint": 0.6 }, "review": { "theme": 9, "tint": 0.6 } },
-    "site addition":  { "prep": { "theme": 6, "tint": 0.8 }, "review": { "theme": 6, "tint": 0.6 } },
-    "new indication": { "prep": { "theme": 6, "tint": 0.8 }, "review": { "theme": 6, "tint": 0.6 } },
-    "cmc must-win":   { "prep": { "theme": 6, "tint": 0.8 }, "review": { "theme": 6, "tint": 0.6 } },
-    "nda":            { "prep": { "theme": 7, "tint": 0.8 }, "review": { "theme": 7, "tint": 0.4 } },
-    "nda (variant)":  { "prep": { "theme": 7, "tint": 0.8 }, "review": { "theme": 7, "tint": 0.4 } },
-    "device":         { "prep": { "rgb": "FFEDEDED" },       "review": { "rgb": "FFD3D7DC" } }
+    "others": {
+      "prep": {
+        "theme": 9,
+        "tint": 0.6
+      },
+      "review": {
+        "theme": 9,
+        "tint": 0.6
+      }
+    },
+    "site addition": {
+      "prep": {
+        "theme": 6,
+        "tint": 0.8
+      },
+      "review": {
+        "theme": 6,
+        "tint": 0.6
+      }
+    },
+    "new indication": {
+      "prep": {
+        "theme": 6,
+        "tint": 0.8
+      },
+      "review": {
+        "theme": 6,
+        "tint": 0.6
+      }
+    },
+    "cmc must-win": {
+      "prep": {
+        "theme": 6,
+        "tint": 0.8
+      },
+      "review": {
+        "theme": 6,
+        "tint": 0.6
+      }
+    },
+    "nda": {
+      "prep": {
+        "theme": 7,
+        "tint": 0.8
+      },
+      "review": {
+        "theme": 7,
+        "tint": 0.4
+      }
+    },
+    "nda (variant)": {
+      "prep": {
+        "theme": 7,
+        "tint": 0.8
+      },
+      "review": {
+        "theme": 7,
+        "tint": 0.4
+      }
+    },
+    "device": {
+      "prep": {
+        "rgb": "FFEDEDED"
+      },
+      "review": {
+        "rgb": "FFD3D7DC"
+      }
+    }
   },
-
   "bundled_template": "template/RA_gantt_template.xlsx",
   "_bundled_note": "기본 간트 양식. 실물 파일에서 서식만 남기고 데이터를 비운 것이라 매번 올릴 필요가 없다. 양식이 바뀌면 tools/make_blank_template.py로 새로 뽑아 이 파일을 교체하면 된다.",
-
   "category_colors": {
-    "Others": ["DDEBF7", "9DC3E6"],
-    "NDA": ["FCE4EC", "F4CAD9"],
-    "NDA (variant)": ["FCE4EC", "F4CAD9"],
-    "Site addition": ["E2EFDA", "A9D08E"],
-    "New indication": ["E2EFDA", "A9D08E"],
-    "CMC Must-Win": ["E2EFDA", "A9D08E"],
-    "Device": ["EDEDED", "D3D7DC"]
+    "Others": [
+      "DDEBF7",
+      "9DC3E6"
+    ],
+    "NDA": [
+      "FCE4EC",
+      "F4CAD9"
+    ],
+    "NDA (variant)": [
+      "FCE4EC",
+      "F4CAD9"
+    ],
+    "Site addition": [
+      "E2EFDA",
+      "A9D08E"
+    ],
+    "New indication": [
+      "E2EFDA",
+      "A9D08E"
+    ],
+    "CMC Must-Win": [
+      "E2EFDA",
+      "A9D08E"
+    ],
+    "Device": [
+      "EDEDED",
+      "D3D7DC"
+    ]
   },
   "status_colors": {
-    "Completed": ["C6E0B4", "548235"],
-    "Ongoing": ["BDD7EE", "2E75B6"],
-    "Planned": ["D9D9D9", "808080"],
-    "Pending": ["FFE699", "BF8F00"],
-    "Cancelled": ["F8CBAD", "C00000"]
+    "Completed": [
+      "C6E0B4",
+      "548235"
+    ],
+    "Ongoing": [
+      "BDD7EE",
+      "2E75B6"
+    ],
+    "Planned": [
+      "D9D9D9",
+      "808080"
+    ],
+    "Pending": [
+      "FFE699",
+      "BF8F00"
+    ],
+    "Cancelled": [
+      "F8CBAD",
+      "C00000"
+    ]
   },
-  "default_status_color": ["EEEEEE", "999999"],
-
+  "default_status_color": [
+    "EEEEEE",
+    "999999"
+  ],
   "snapshot_tab_naming": "%Y%m%d",
   "_snapshot_note": "결과 시트 이름. 기존 파일의 탭 복제 관행(20260708, 20260607…)을 그대로 재현한다."
 }

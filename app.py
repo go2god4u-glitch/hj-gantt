@@ -97,7 +97,7 @@ def _month_span(span: list[str]) -> list[str]:
     return out
 
 
-def _bars(rec: dict, months: list[str]) -> list[dict]:
+def _bars(rec: dict, months: list[str], with_prep: bool) -> list[dict]:
     """
     미리보기용 바 좌표. 엑셀 채색과 같은 규칙으로 계산한다.
 
@@ -114,7 +114,7 @@ def _bars(rec: dict, months: list[str]) -> list[dict]:
     out = []
     for phase in ("pra", "nda"):
         sub, app_, prep = rec.get(f"{phase}_sub"), rec.get(f"{phase}_app"), rec.get(f"{phase}_prep")
-        if prep and sub:
+        if with_prep and prep and sub:
             a, b = to_i(prep), to_i(sub)
             if a is not None or b is not None:
                 a = a if a is not None else 0
@@ -144,6 +144,7 @@ def _payload(result: dict, out_path: Path, out_name: str,
     """
     records = result.pop("records", [])
     months = _month_span(result["month_span"])
+    with_prep = engine.draw_prep_period(engine.load_config())
 
     added_keys = {f"{r['product'].lower()}|{r['project'].lower()}"
                   for r in result["changes"]["added"]}
@@ -155,7 +156,9 @@ def _payload(result: dict, out_path: Path, out_name: str,
         key = f"{(r['product'] or '').lower()}|{(r['project'] or '').lower()}"
         rows.append({
             **r,
-            "bars": _bars(r, months),
+            # 화면에 보이는 Category는 엑셀에 찍히는 것과 같아야 한다 — 원본 그대로.
+            "category": r.get("category_source") or r.get("category"),
+            "bars": _bars(r, months, with_prep),
             "is_new": key in added_keys,
             "is_moved": key in moved_keys,
         })
@@ -168,6 +171,7 @@ def _payload(result: dict, out_path: Path, out_name: str,
         "template_source": template_source,
         "months": months,
         "rows": rows,
+        "draw_prep": with_prep,
     })
     return result
 
