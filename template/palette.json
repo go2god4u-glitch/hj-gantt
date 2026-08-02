@@ -1,0 +1,62 @@
+{
+  "others": {
+    "prep": {
+      "theme": 9,
+      "tint": 0.6
+    },
+    "review": {
+      "theme": 9,
+      "tint": 0.6
+    }
+  },
+  "site addition": {
+    "prep": {
+      "theme": 6,
+      "tint": 0.8
+    },
+    "review": {
+      "theme": 6,
+      "tint": 0.6
+    }
+  },
+  "new indication": {
+    "prep": {
+      "theme": 6,
+      "tint": 0.8
+    },
+    "review": {
+      "theme": 6,
+      "tint": 0.6
+    }
+  },
+  "nda": {
+    "prep": {
+      "theme": 7,
+      "tint": 0.8
+    },
+    "review": {
+      "theme": 7,
+      "tint": 0.4
+    }
+  },
+  "cmc must-win": {
+    "prep": {
+      "theme": 6,
+      "tint": 0.8
+    },
+    "review": {
+      "theme": 6,
+      "tint": 0.6
+    }
+  },
+  "nda (variant)": {
+    "prep": {
+      "theme": 7,
+      "tint": 0.8
+    },
+    "review": {
+      "theme": 7,
+      "tint": 0.4
+    }
+  }
+}
