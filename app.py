@@ -113,7 +113,9 @@ def _bars(rec: dict, months: list[str], with_prep: bool) -> list[dict]:
 
     out = []
     for phase in ("pra", "nda"):
-        sub, app_, prep = rec.get(f"{phase}_sub"), rec.get(f"{phase}_app"), rec.get(f"{phase}_prep")
+        sub, prep = rec.get(f"{phase}_sub"), rec.get(f"{phase}_prep")
+        # 엔진의 Record.app_or_est와 같은 규칙 — 승인일이 없으면 추정치로 그린다.
+        app_ = rec.get(f"{phase}_app") or rec.get(f"{phase}_app_est")
         if with_prep and prep and sub:
             a, b = to_i(prep), to_i(sub)
             if a is not None or b is not None:

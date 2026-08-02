@@ -408,6 +408,10 @@ class Record:
     nda_app: date | None = None
     pra_prep: date | None = None
     nda_prep: date | None = None
+    # 승인일이 아직 없는 건의 '예상' 승인일. 바 길이에만 쓰고 날짜 칸에는 쓰지
+    # 않는다 — 추정치를 확정 일정처럼 셀에 박아 넣으면 안 되기 때문이다.
+    pra_app_est: date | None = None
+    nda_app_est: date | None = None
     lead_months: int = 0
     origins: dict = field(default_factory=dict)
     flags: list[str] = field(default_factory=list)
@@ -422,9 +426,21 @@ class Record:
 
     def to_dict(self) -> dict:
         d = asdict(self)
-        for k in ("pra_sub", "pra_app", "nda_sub", "nda_app", "pra_prep", "nda_prep"):
+        for k in ("pra_sub", "pra_app", "nda_sub", "nda_app", "pra_prep", "nda_prep",
+                  "pra_app_est", "nda_app_est"):
             d[k] = d[k].isoformat() if d[k] else None
         return d
+
+    def app_or_est(self, phase: str) -> date | None:
+        """바를 어디까지 그릴지. 실제 승인일이 있으면 그것, 없으면 추정치."""
+        return getattr(self, f"{phase}_app") or getattr(self, f"{phase}_app_est")
+
+    @property
+    def last_activity(self) -> date | None:
+        """이 건의 마지막 시점. 추정 승인일까지 포함해서 본다."""
+        ds = [d for d in (self.pra_sub, self.pra_app, self.nda_sub, self.nda_app,
+                          self.pra_app_est, self.nda_app_est) if d]
+        return max(ds) if ds else None
 
 
 def _choose(actual: DateValue, planned: DateValue, reject_partial: bool,
@@ -465,6 +481,22 @@ def _choose(actual: DateValue, planned: DateValue, reject_partial: bool,
         if dv.usable:
             return dv.value, f"{label}(미확정표기)"
     return None, "없음"
+
+
+def review_months(category_source: str, config: dict) -> int:
+    """
+    승인일이 아직 없는 건의 검토기간(개월). 팀이 준 표준 소요기간 표를 쓴다.
+
+    RA plan의 Category는 20종인데 표는 5개 표준 유형으로 되어 있다. 그래서
+    review_type_map으로 한 번 접은 뒤 개월 수를 찾는다. 표에 없는 유형은
+    default_review_months.
+    """
+    low = _low(category_source)
+    std = {k.lower(): v for k, v in config.get("review_type_map", {}).items()}.get(low)
+    table = {k.lower(): v for k, v in config.get("review_months_by_type", {}).items()}
+    if std and _low(std) in table:
+        return int(table[_low(std)])
+    return int(config.get("default_review_months", 8))
 
 
 def build_records(ws: Worksheet, cols: SourceColumns, config: dict) -> list[Record]:
@@ -513,6 +545,18 @@ def build_records(ws: Worksheet, cols: SourceColumns, config: dict) -> list[Reco
             for ph in PHASES
         }
 
+        # 승인일이 비어 있으면 표준 검토기간으로 끝점을 추정한다. 이게 없으면
+        # 예정 건들이 제출월 한 칸짜리 점으로만 찍혀 사실상 안 보인다.
+        # PRA는 유형과 무관하게 팀이 정한 고정값(기본 5개월)을 쓴다.
+        pra_rev = int(config.get("pra_review_months", 5))
+        nda_rev = review_months(cat_src, config)
+        est = {}
+        for ph in PHASES:
+            sub, app_ = dates[f"{ph}_sub"], dates[f"{ph}_app"]
+            months = pra_rev if ph == "pra" else nda_rev
+            est[f"{ph}_app_est"] = (add_months(sub, months)
+                                    if sub and not app_ else None)
+
         low = cat_src.lower()
         if low in explicit:
             category = explicit[low]
@@ -548,7 +592,7 @@ def build_records(ws: Worksheet, cols: SourceColumns, config: dict) -> list[Reco
             lead_months=lead,
             origins=origins,
             flags=flags,
-            **dates, **prep,
+            **dates, **prep, **est,
         ))
     return out
 
@@ -1005,14 +1049,14 @@ def _paint_row(ws: Worksheet, row: int, rec: Record, month_cols: dict[int, date]
     spans_prep, spans_review = [], []
     for ph in PHASES:
         sub = getattr(rec, f"{ph}_sub")
-        app = getattr(rec, f"{ph}_app")
+        app = rec.app_or_est(ph)               # 승인일 없으면 표준 검토기간으로 추정
         prep = getattr(rec, f"{ph}_prep")
         if with_prep and prep and sub:
             spans_prep.append((prep, sub))
         if sub and app:
             spans_review.append((sub, app))
-        elif sub and not app:
-            spans_review.append((sub, sub))     # 승인일 없으면 제출월만 마커
+        elif sub:
+            spans_review.append((sub, sub))     # 추정조차 못 하면 제출월만 마커
 
     for c, m in month_cols.items():
         m_end = add_months(m, 1)
@@ -1258,7 +1302,21 @@ def generate(ra_plan_path, output_path, template_path=None, config: dict | None 
         )
 
     records, cols, source_sheet = read_ra_plan(ra_plan_path, config, sheet_name)
-    usable = sort_records([r for r in records if r.has_dates], config)
+    dated = [r for r in records if r.has_dates]
+
+    # 이미 끝난 옛날 건은 간트에 올리지 않는다. 타임라인 창(2025~) 밖이라
+    # 어차피 바가 안 그려지고, 빈 행만 수백 개 쌓여 읽기가 어려워진다.
+    # 판정은 '마지막 시점'으로 하되 추정 승인일까지 포함한다 — 2024년에
+    # 제출하고 아직 심사 중인 건은 살아 있는 건이므로 남겨야 한다.
+    cutoff_raw = config.get("min_activity_date")
+    cutoff = date.fromisoformat(cutoff_raw) if cutoff_raw else None
+    if cutoff:
+        kept = [r for r in dated
+                if r.last_activity is None or r.last_activity >= cutoff]
+    else:
+        kept = dated
+    records_filtered = len(dated) - len(kept)
+    usable = sort_records(kept, config)
 
     if previous_rows is None:
         previous_rows = read_gantt_rows(template_path, config, sheet_name)
@@ -1270,7 +1328,9 @@ def generate(ra_plan_path, output_path, template_path=None, config: dict | None 
         "header_row": cols.header_row,
         "records_total": len(records),
         "records_written": len(usable),
-        "records_skipped": len(records) - len(usable),
+        "records_skipped": len(records) - len(dated),
+        "records_filtered": records_filtered,
+        "min_activity_date": cutoff_raw,
         "detect_notes": cols.notes,
         "records": [r.to_dict() for r in usable],
         "changes": changes,
