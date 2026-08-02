@@ -117,13 +117,20 @@ def _bars(rec: dict, months: list[str], with_prep: bool) -> list[dict]:
         sub, prep = rec.get(f"{phase}_sub"), rec.get(f"{phase}_prep")
         # 엔진의 Record.app_or_est와 같은 규칙 — 승인일이 없으면 추정치로 그린다.
         app_ = rec.get(f"{phase}_app") or rec.get(f"{phase}_app_est")
+        # 툴팁에 실제 날짜를 싣는다. 바만 보고는 "몇 월부터 몇 월까지"를 셀 수
+        # 없어서, 결국 엑셀을 열어 확인하게 된다. estimated는 승인일이 없어
+        # 표준 검토기간으로 추정한 구간이라는 표시다.
+        estimated = bool(sub and not rec.get(f"{phase}_app")
+                         and rec.get(f"{phase}_app_est"))
         if with_prep and prep and sub:
             a, b = to_i(prep), to_i(sub)
             if a is not None or b is not None:
                 a = a if a is not None else 0
                 b = b if b is not None else len(months) - 1
                 if b > a:
-                    out.append({"kind": "prep", "phase": phase, "start": a, "len": b - a})
+                    out.append({"kind": "prep", "phase": phase, "start": a,
+                                "len": b - a, "from": prep, "to": sub,
+                                "estimated": False})
         if sub:
             a = to_i(sub)
             b = to_i(app_) if app_ else a
@@ -132,7 +139,9 @@ def _bars(rec: dict, months: list[str], with_prep: bool) -> list[dict]:
             a = a if a is not None else 0
             b = b if b is not None else len(months) - 1
             if b >= a:
-                out.append({"kind": "review", "phase": phase, "start": a, "len": b - a + 1})
+                out.append({"kind": "review", "phase": phase, "start": a,
+                            "len": b - a + 1, "from": sub, "to": app_,
+                            "estimated": estimated})
     return out
 
 
@@ -149,19 +158,26 @@ def _payload(result: dict, out_path: Path, out_name: str,
     months = _month_span(result["month_span"])
     with_prep = engine.draw_prep_period(engine.load_config())
 
-    added_keys = {f"{r['product'].lower()}|{r['project'].lower()}"
-                  for r in result["changes"]["added"]}
-    moved_keys = {f"{r['product'].lower()}|{r['project'].lower()}"
-                  for r in result["changes"]["moved"]}
+    # 배지는 RA plan의 원본 행 번호로 붙인다. 제품+과제명+유형으로 맞추면
+    # 과제명이 빈 RA plan에서 같은 키의 행 수십 개에 배지가 한꺼번에 붙는다
+    # (실제로 변경 3건에 5행이 표시됐다). source_row는 행마다 고유하다.
+    def rows_of(kind: str) -> set[int]:
+        return {r.get("source_row") for r in result["changes"][kind]
+                if r.get("source_row") is not None}
+
+    added_src = rows_of("added")
+    moved_src = rows_of("moved")
+    status_src = rows_of("status_changed")
 
     rows = []
     for r in records:
-        key = f"{(r['product'] or '').lower()}|{(r['project'] or '').lower()}"
+        src = r.get("source_row")
         rows.append({
             **r,
             "bars": _bars(r, months, with_prep),
-            "is_new": key in added_keys,
-            "is_moved": key in moved_keys,
+            "is_new": src in added_src,
+            "is_moved": src in moved_src,
+            "is_status": src in status_src,
         })
 
     result.update({
@@ -241,14 +257,19 @@ def generate():
             out_name = f"RA_gantt_{datetime.now():%Y%m%d_%H%M%S}.xlsx"
             out_path = workdir / out_name
 
-            # 기준선은 '지난번 실행'이다. 이력이 없으면 None을 넘겨 엔진 기본
-            # 동작(양식에서 읽기)에 맡긴다.
-            previous = history.previous_rows()
-            baseline = history.load_index()[:1]
+            # 기준선은 기본이 '직전 실행'이고, 화면에서 다른 시점을 고를 수 있다.
+            base_meta, previous = history.baseline(
+                (request.form.get("baseline_id") or "").strip() or None)
 
             result = engine.generate(ra_path, out_path, tpl_path,
                                      engine.load_config(),
                                      previous_rows=previous)
+
+            # 엑셀에 변경 요약을 넣을지는 **선택**이다. 기본은 양식 그대로.
+            include_summary = request.form.get("include_summary") == "1"
+            if include_summary:
+                engine.write_change_summary(out_path, result["changes"], base_meta)
+
             payload = _payload(result, out_path, out_name, template_source)
 
             entry = history.record(
@@ -258,8 +279,9 @@ def generate():
                 summary=result["changes"]["summary"],
             )
             payload["history_enabled"] = history.enabled()
-            payload["baseline"] = baseline[0] if baseline else None
+            payload["baseline"] = base_meta
             payload["history"] = history.load_index() if entry else []
+            payload["summary_in_excel"] = include_summary
             return jsonify(payload)
 
     except ValueError as e:

@@ -1392,6 +1392,146 @@ def write_into_template(template_path, records: list[Record], output_path,
     }
 
 
+DATE_LABEL = {"pra_sub": "PRA 제출", "pra_app": "PRA 승인",
+              "nda_sub": "NDA 제출", "nda_app": "NDA 승인"}
+
+
+def write_change_summary(path: str | Path, changes: dict,
+                         baseline: dict | None = None) -> bool:
+    """
+    만들어진 간트 파일에 '변경 요약' 시트를 덧붙인다. **선택 기능**이다.
+
+    기본적으로는 붙이지 않는다. 간트 파일은 양식 그대로여야 하고, 파일을
+    받는 사람마다 필요가 다르기 때문이다. 다만 파일만 들고 회의에 들어가는
+    경우엔 화면의 변경 내역이 통째로 사라지므로, 원할 때 넣을 수 있게 열어 둔다.
+
+    맨 앞에 넣지 않고 맨 뒤에 붙인다. 파일을 열었을 때 보이는 것은 여전히
+    간트여야 하기 때문이다.
+    """
+    wb = load_workbook(path)
+    name = "변경 요약"
+    if name in wb.sheetnames:
+        del wb[name]
+    ws = wb.create_sheet(name)
+
+    head = Font(bold=True, size=12)
+    sub = Font(bold=True, color="FFFFFF")
+    subfill = PatternFill("solid", fgColor="305496")
+    muted = Font(color="808080", size=9)
+
+    r = 1
+    ws.cell(row=r, column=1, value="변경 요약").font = Font(bold=True, size=14)
+    r += 1
+    if baseline:
+        who = f" · {baseline.get('user')}" if baseline.get("user") else ""
+        ws.cell(row=r, column=1,
+                value=f"지난번 실행 {baseline.get('at', '')}{who} "
+                      f"({baseline.get('count', 0)}건) 대비").font = muted
+    else:
+        ws.cell(row=r, column=1,
+                value="첫 실행 — 비교할 지난번 기록이 없어 전부 신규입니다.").font = muted
+    r += 2
+
+    s = changes.get("summary", {})
+    for label, key in (("새 프로젝트", "added"), ("일정 변경", "moved"),
+                       ("상태 변경", "status_changed"), ("사라진 건", "removed")):
+        ws.cell(row=r, column=1, value=label).font = head
+        ws.cell(row=r, column=2, value=s.get(key, 0))
+        r += 1
+    r += 1
+
+    def section(title: str, rows: list[dict], render) -> None:
+        nonlocal r
+        if not rows:
+            return
+        c = ws.cell(row=r, column=1, value=f"{title} ({len(rows)}건)")
+        c.font, c.fill = sub, subfill
+        for col in range(2, 5):
+            ws.cell(row=r, column=col).fill = subfill
+        r += 1
+        for item in rows:
+            for i, v in enumerate(render(item), start=1):
+                ws.cell(row=r, column=i, value=v)
+            r += 1
+        r += 1
+
+    section("새 프로젝트", changes.get("added", []),
+            lambda x: [x.get("product"), x.get("project"), x.get("category"),
+                       x.get("status")])
+    section("일정 변경", changes.get("moved", []),
+            lambda x: [x.get("product"), x.get("project"), x.get("category"),
+                       " / ".join(f"{DATE_LABEL.get(k, k)}: {v.get('from') or '—'}"
+                                  f" → {v.get('to') or '—'}"
+                                  for k, v in x.get("date_changes", {}).items())])
+    section("상태 변경", changes.get("status_changed", []),
+            lambda x: [x.get("product"), x.get("project"), x.get("category"),
+                       f"{x.get('from_status')} → {x.get('to_status')}"])
+    section("사라진 건", changes.get("removed", []),
+            lambda x: [x.get("product"), x.get("project"), x.get("category"),
+                       x.get("reason", "")])
+
+    for col, width in (("A", 14), ("B", 52), ("C", 22), ("D", 46)):
+        ws.column_dimensions[col].width = width
+    wb.save(path)
+    return True
+
+
+def _explain_removals(changes: dict, records: list[Record],
+                      dated: list[Record], kept: list[Record]) -> None:
+    """
+    '사라진 건'에 왜 사라졌는지를 붙인다.
+
+    이름만 나열하면 매니저가 "5건이 없어졌다"로 읽는다. 그런데 실제로는
+    대부분 RA plan에서 지워진 게 아니라 우리 필터에 걸린 것이다. 사유를
+    구별해 주지 않으면 없는 사고를 만들어 낸다.
+
+      · RA plan에서 삭제  — 원본에 그 행 자체가 없다. 진짜 사라진 것
+      · 날짜 없음         — 원본에 있지만 날짜가 하나도 없어 그릴 수 없다
+      · 2025년 이전 종료  — 원본에 있지만 타임라인 창 밖이라 뺐다
+    """
+    # 있고 없고가 아니라 **개수**로 따진다. 과제명이 빈 RA plan에서는 같은
+    # 키(제품+과제명+유형)에 수십 건이 몰리므로, "그 키가 아직 있나?"로 물으면
+    # 진짜 지워진 행도 "아직 있다"가 나온다. 실제로 그렇게 틀렸다.
+    removed = changes.get("removed", [])
+    if not removed:
+        changes["removed_reasons"] = {}
+        return
+
+    # 단정할 수 있을 때만 단정한다.
+    #
+    # 같은 키에 여러 건이 몰려 있으면(과제명이 빈 RA plan에서는 흔하다) 그중
+    # 어느 것이 사라졌는지 특정할 방법이 없다. 지난번 실행 당시의 원본이
+    # 우리에게 없기 때문이다. 그래서 키 전체가 한 가지 상태일 때만 그 사유로
+    # 단정하고, 섞여 있으면 섞여 있다고 말한다. 그럴듯한 사유를 지어내면
+    # 매니저가 그걸 믿고 잘못 판단한다.
+    def tally(items, key_fn) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for it in items:
+            k = key_fn(it)
+            out[k] = out.get(k, 0) + 1
+        return out
+
+    n_all = tally(records, record_key)
+    n_dated = tally(dated, record_key)
+    n_kept = tally(kept, record_key)
+
+    for row in removed:
+        k = _key_of_row(row)
+        if n_all.get(k, 0) == 0:
+            row["reason"] = "RA plan에서 삭제"
+        elif n_dated.get(k, 0) == 0:
+            row["reason"] = "날짜 없음"
+        elif n_kept.get(k, 0) == 0:
+            row["reason"] = "2025년 이전 종료 (타임라인 밖)"
+        else:
+            row["reason"] = "삭제 또는 날짜·유형 변경"
+
+    tally: dict[str, int] = {}
+    for row in changes.get("removed", []):
+        tally[row["reason"]] = tally.get(row["reason"], 0) + 1
+    changes["removed_reasons"] = tally
+
+
 def generate(ra_plan_path, output_path, template_path=None, config: dict | None = None,
              sheet_name: str | None = None, previous_rows: list[dict] | None = None) -> dict:
     """
@@ -1427,6 +1567,7 @@ def generate(ra_plan_path, output_path, template_path=None, config: dict | None 
     if previous_rows is None:
         previous_rows = read_gantt_rows(template_path, config, sheet_name)
     changes = diff_records(previous_rows or [], usable)
+    _explain_removals(changes, records, dated, kept)
 
     result = write_into_template(template_path, usable, output_path, config, sheet_name)
     result.update({

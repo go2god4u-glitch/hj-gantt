@@ -78,6 +78,17 @@
   summary{cursor:pointer;font-size:13px;color:var(--muted)}
   .legend{display:flex;gap:16px;font-size:12px;color:var(--muted);margin-top:10px;flex-wrap:wrap}
   .sw{display:inline-block;width:22px;height:9px;border-radius:2px;vertical-align:0px;margin-right:5px}
+  .b-status{background:#e0e7ff;color:#3730a3}
+  /* 오늘 위치 세로선 — 간트에서 "지금 어디쯤인가"가 가장 먼저 궁금하다 */
+  .today{position:absolute;top:0;bottom:0;width:1px;background:#e11d48;opacity:.55;pointer-events:none}
+  .todaycol{box-shadow:inset 1px 0 0 #e11d48}
+  .bar.est{opacity:.62;background-image:repeating-linear-gradient(45deg,
+     rgba(255,255,255,.55) 0 2px, transparent 2px 5px)}
+  .toolbar{display:flex;gap:14px;align-items:center;flex-wrap:wrap;margin:14px 0 6px;font-size:13px}
+  .toolbar label{display:flex;gap:5px;align-items:center;cursor:pointer;color:var(--muted)}
+  .opt{display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--muted);cursor:pointer}
+  select{font:inherit;padding:7px 9px;border-radius:8px;border:1px solid var(--line);
+         background:var(--panel);color:var(--ink)}
 </style>
 </head>
 <body>
@@ -113,6 +124,25 @@
       간트 양식: <b>{{ template_source }}</b> — 색·글꼴·열너비·병합이 이 양식 그대로 유지됩니다.
     </div>
     {% endif %}
+
+    {% if history %}
+    <label class="field" style="margin-top:16px">
+      <span class="lab">무엇과 비교할까요?</span>
+      <select id="baseline_id">
+        {% for h in history %}
+        <option value="{{ h.id }}">{{ h.at[5:16].replace('T', ' ') }}
+          {%- if h.user %} · {{ h.user }}{% endif %} ({{ h.count }}건){% if loop.first %} — 직전 실행{% endif %}</option>
+        {% endfor %}
+      </select>
+      <span class="hint">기본은 직전 실행입니다. 분기·월 단위로 묶어 보고 싶을 때 다른 시점을 고르세요.</span>
+    </label>
+    {% endif %}
+
+    <label class="opt" style="margin-top:16px">
+      <input type="checkbox" id="include_summary">
+      <span>변경 요약을 <b>엑셀 파일에도</b> 넣기
+        <span style="opacity:.75">— 맨 뒤에 "변경 요약" 시트가 추가됩니다. 파일만 공유할 때 유용합니다.</span></span>
+    </label>
 
     <div class="row" style="margin-top:18px">
       <button type="submit" class="primary" id="go">간트 생성</button>
@@ -219,11 +249,19 @@ function changeDetail(r){
       `${DATE[k]||k}: ${v.from||'—'} → ${v.to||'—'}`).join(' / ') + '</span>')]);
   if(c.status_changed.length) blocks.push(['상태 변경', c.status_changed.map(x =>
     `${line(x)} <span style="color:var(--muted)">(${esc(x.from_status)} → ${esc(x.to_status)})</span>`)]);
-  if(c.removed.length) blocks.push(['사라진 건', c.removed.map(line)]);
+  // '사라진 건'은 사유 없이 이름만 보여주면 "5건이 없어졌다"로 읽힌다.
+  // 실제로는 대부분 RA plan에서 지워진 게 아니라 우리 필터에 걸린 것이다.
+  if(c.removed.length) blocks.push(['사라진 건', c.removed.map(x =>
+    `${line(x)} <span style="color:var(--muted)">— ${esc(x.reason || '사유 미상')}</span>`)]);
   if(!blocks.length) return '';
+
+  const why = c.removed_reasons && Object.keys(c.removed_reasons).length
+    ? `<div class="hint" style="margin-top:6px">사라진 건 사유: ` +
+      Object.entries(c.removed_reasons).map(([k,v]) => `${esc(k)} ${v}건`).join(' · ') + '</div>'
+    : '';
   return blocks.map(([title, items]) => `<details><summary>${title} ${items.length}건</summary>
     <div class="note" style="margin-top:8px;max-height:260px;overflow:auto">
-      ${items.join('<br>')}</div></details>`).join('');
+      ${items.join('<br>')}</div></details>`).join('') + why;
 }
 
 function historyBlock(r){
@@ -257,6 +295,11 @@ function render(r){
   const months = r.months, c = r.changes.summary;
   const MW = 15;
 
+  // 오늘이 몇 번째 칸인지. 창 밖이면 선을 그리지 않는다.
+  const now = new Date();
+  const todayKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+  const todayIdx = months.indexOf(todayKey);
+
   let head = `<tr>
       <th class="sticky">Responsible</th><th>Category</th><th>Product</th>
       <th>Project</th><th>PRA Sub</th><th>PRA App</th>
@@ -265,23 +308,33 @@ function render(r){
     </tr><tr>
       <th class="sticky"></th><th></th><th></th><th></th>
       <th></th><th></th><th></th><th></th><th></th>
-      ${months.map(m => `<th class="mcell" style="font-size:9px;text-align:center">${
-        Number(m.slice(5,7))}</th>`).join('')}
+      ${months.map((m,i) => `<th class="mcell${i === todayIdx ? ' todaycol' : ''}"
+        style="font-size:9px;text-align:center${i === todayIdx ? ';color:#e11d48;font-weight:700' : ''}"
+        ${i === todayIdx ? 'title="이번 달"' : ''}>${Number(m.slice(5,7))}</th>`).join('')}
     </tr>`;
+
+  const todayMark = todayIdx >= 0
+    ? `<div class="today" style="left:${todayIdx*MW}px"></div>` : '';
 
   const body = r.rows.map(row => {
     const badge = row.is_new ? '<span class="badge b-new">NEW</span> '
-                : row.is_moved ? '<span class="badge b-moved">변경</span> ' : '';
+                : row.is_moved ? '<span class="badge b-moved">일정</span> '
+                : row.is_status ? '<span class="badge b-status">상태</span> ' : '';
+    const changed = row.is_new || row.is_moved || row.is_status;
     // 색은 엑셀에 실제로 들어가는 색 그대로 (양식에서 온 값)
     const pal = (r.palette_css || {})[(row.category || '').toLowerCase()] || {};
     const bars = row.bars.map(b => {
       const bg = pal[b.kind];
       const style = `left:${b.start*MW}px;width:${Math.max(b.len*MW-1,3)}px` +
                     (bg ? `;background:${bg}` : '');
-      return `<div class="bar ${b.kind}" style="${style}"
-        title="${b.phase.toUpperCase()} ${b.kind==='prep'?'준비기간':'검토기간'}"></div>`;
+      // 바만 보고는 몇 월부터 몇 월까지인지 셀 수 없다. 날짜를 그대로 붙인다.
+      const span = `${b.from || '?'} → ${b.to || '미정'}`;
+      const tip = `${b.phase.toUpperCase()} ${b.kind==='prep'?'준비기간':'검토기간'}\n${span}` +
+                  (b.estimated ? '\n(승인일 미정 — 표준 검토기간으로 추정)' : '');
+      return `<div class="bar ${b.kind}${b.estimated ? ' est' : ''}" style="${style}"
+        title="${esc(tip)}"></div>`;
     }).join('');
-    return `<tr>
+    return `<tr data-changed="${changed ? 1 : 0}">
       <td class="sticky">${badge}${esc(row.responsible)}</td>
       <td>${esc(row.category)}</td>
       <td>${esc(row.product)}</td>
@@ -290,10 +343,12 @@ function render(r){
       <td>${esc(row.nda_sub ?? '')}</td><td>${esc(row.nda_app ?? '')}</td>
       <td>${esc(row.status)}</td>
       <td class="mcell" colspan="${months.length}" style="padding:0">
-        <div class="track" style="width:${months.length*MW}px">${bars}</div>
+        <div class="track" style="width:${months.length*MW}px">${todayMark}${bars}</div>
       </td>
     </tr>`;
   }).join('');
+
+  const changedCount = r.rows.filter(x => x.is_new || x.is_moved || x.is_status).length;
 
   const notes = [].concat(r.detect_notes || [], r.template_notes || []);
 
@@ -341,7 +396,23 @@ function render(r){
       </div>
     </div>
 
+    <div class="toolbar">
+      <label><input type="checkbox" id="onlychanged" ${changedCount ? '' : 'disabled'}>
+        변경된 행만 보기 (${changedCount}건)</label>
+      <span style="color:var(--muted)">
+        ${todayIdx >= 0 ? '<i style="display:inline-block;width:1px;height:11px;background:#e11d48;vertical-align:-1px;margin-right:5px"></i>이번 달' : ''}
+        ${r.summary_in_excel ? ' · 엑셀에 "변경 요약" 시트가 포함됐습니다' : ''}
+      </span>
+    </div>
+
     <div class="scroll"><table><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+
+  const only = $('#onlychanged');
+  if(only) only.onchange = () => {
+    document.querySelectorAll('tbody tr').forEach(tr => {
+      tr.style.display = (only.checked && tr.dataset.changed !== '1') ? 'none' : '';
+    });
+  };
 
   $('#dl').onclick = () => saveXlsx(r);
   if($('#clearhist')) $('#clearhist').onclick = async () => {
@@ -366,6 +437,8 @@ $('#f').onsubmit = async ev => {
   if($('#ra_plan').files[0]) fd.append('ra_plan', $('#ra_plan').files[0]);
   if($('#template').files[0]) fd.append('template', $('#template').files[0]);
   if($('#user')) fd.append('user', $('#user').value);
+  if($('#baseline_id')) fd.append('baseline_id', $('#baseline_id').value);
+  if($('#include_summary') && $('#include_summary').checked) fd.append('include_summary', '1');
 
   const btn = $('#go');
   btn.disabled = true;

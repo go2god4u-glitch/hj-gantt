@@ -101,17 +101,9 @@ def load_index() -> list[dict]:
         return []
 
 
-def previous_rows() -> list[dict] | None:
-    """
-    가장 최근 실행의 행. 이번 결과와 비교할 기준선이다.
-
-    None을 돌려주면 호출한 쪽은 '기준선 없음'으로 보고 엔진 기본 동작
-    (양식에서 읽기)에 맡긴다. 빈 리스트와 구별해야 해서 None이다.
-    """
-    index = load_index()
-    if not index:
-        return None
-    raw = _cmd("GET", SNAP_KEY + str(index[0].get("id")))
+def rows_of(entry_id: str) -> list[dict] | None:
+    """특정 실행의 행 스냅샷."""
+    raw = _cmd("GET", SNAP_KEY + str(entry_id))
     if not raw:
         return None
     try:
@@ -119,6 +111,28 @@ def previous_rows() -> list[dict] | None:
         return rows if isinstance(rows, list) else None
     except ValueError:
         return None
+
+
+def baseline(entry_id: str | None = None) -> tuple[dict | None, list[dict] | None]:
+    """
+    비교 기준선 하나를 고른다. (메타, 행) 을 돌려준다.
+
+    entry_id를 주면 그 실행과 비교하고(예: "6월 실행 대비"), 없으면 가장
+    최근 실행과 비교한다. 기본이 '직전'인 이유는 그게 대부분 알고 싶은
+    것이기 때문이고, 고를 수 있게 열어 둔 이유는 분기·월 단위로 묶어 보고
+    싶을 때가 있기 때문이다.
+
+    행이 None이면 호출한 쪽은 '기준선 없음'으로 보고 엔진 기본 동작
+    (양식에서 읽기)에 맡긴다. 빈 리스트와 구별해야 해서 None이다.
+    """
+    index = load_index()
+    if not index:
+        return None, None
+    meta = next((e for e in index if e.get("id") == entry_id), None) if entry_id \
+        else index[0]
+    if meta is None:
+        meta = index[0]
+    return meta, rows_of(str(meta.get("id")))
 
 
 def record(user: str, filename: str, rows: list[dict],
