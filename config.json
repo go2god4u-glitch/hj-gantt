@@ -145,22 +145,16 @@
   },
   "category_fallback": "Others",
   "_category_note": "간트에 실제로 나타난 값은 7종뿐이다 (Others 135, Site addition 26, New indication 17, NDA 15, NDA (variant) 13, CMC Must-Win 11, Device 2). 반면 RA plan Category는 20종. 즉 passthrough/map에 없는 나머지는 전부 Others로 접힌다. 실측 확인: CMC→Others, Safety/Labelling→Others. Device·NDA (variant)의 원본은 표본 부족이라 추정이며 calibrate로 재확인 필요.",
-  "draw_prep_period": false,
-  "_draw_prep_note": "준비기간(연한 색) 바를 그릴지. 기본 false — 아래 lead_months_by_category는 실측이 아니라 규제 관행에서 뽑은 추정치라, 그려 놓으면 사람이 확정된 일정으로 읽는다. calibrate로 실제 간트의 연한 바 시작점을 재서 값을 교체한 뒤에 true로 켤 것.",
-  "lead_months_by_category": {
-    "NDA": 12,
-    "NDA (Must-Win)": 12,
-    "New indication": 9,
-    "Site addition": 6,
-    "Overseas site registration": 6,
-    "CMC": 4,
-    "CMC Must-Win": 4,
-    "Renewal": 4,
-    "Safety/Labelling": 2,
-    "Labelling": 2
+  "draw_prep_period": true,
+  "prep_months_by_type": {
+    "NDA": 4,
+    "Site transfer": 3,
+    "New indication/posology": 3,
+    "CMC variation": 3,
+    "Safety update": 3
   },
-  "default_lead_months": 3,
-  "_lead_note": "준비기간(연한색 바) 길이. ⚠️ 실측값이 아니라 규제 관행 기준 초안이다. 실제 간트에서 연한 바가 제출일 몇 개월 전에 시작하는지 재보고 이 값을 교체할 것. 리드타임은 변환 후가 아니라 원본 Category 기준으로 적용된다.",
+  "default_prep_months": 3,
+  "_prep_note": "준비기간(연한 색 바) — 자료 인도 → 제출까지 걸리는 개월 수. 팀이 준 표 기준으로 NDA만 4개월, 나머지 표준 유형은 3개월. review_type_map으로 RA plan Category 20종을 5개 표준 유형에 접어 찾고, 표에 없으면 default_prep_months. PRA·NDA 두 구간에 같은 길이를 쓴다. draw_prep_period=false로 두면 아예 안 그린다.",
   "review_type_map": {
     "NDA": "NDA",
     "NDA (Must-Win)": "NDA",
@@ -199,7 +193,7 @@
     "others": {
       "prep": {
         "theme": 9,
-        "tint": 0.6
+        "tint": 0.8
       },
       "review": {
         "theme": 9,

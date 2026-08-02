@@ -483,6 +483,26 @@ def _choose(actual: DateValue, planned: DateValue, reject_partial: bool,
     return None, "없음"
 
 
+def _std_type(category_source: str, config: dict) -> str | None:
+    """RA plan Category(20종) → 팀 표준 유형(5종). 기간 표를 찾는 열쇠."""
+    low = _low(category_source)
+    return {k.lower(): v for k, v in config.get("review_type_map", {}).items()}.get(low)
+
+
+def prep_months(category_source: str, config: dict) -> int:
+    """
+    준비기간(연한 색 바) 길이. 자료 인도 → 제출까지 걸리는 개월 수.
+
+    팀이 준 표 기준: NDA 4개월, 나머지 표준 유형은 3개월. 표에 없는 Category는
+    default_prep_months.
+    """
+    std = _std_type(category_source, config)
+    table = {k.lower(): v for k, v in config.get("prep_months_by_type", {}).items()}
+    if std and _low(std) in table:
+        return int(table[_low(std)])
+    return int(config.get("default_prep_months", 3))
+
+
 def review_months(category_source: str, config: dict) -> int:
     """
     승인일이 아직 없는 건의 검토기간(개월). 팀이 준 표준 소요기간 표를 쓴다.
@@ -491,8 +511,7 @@ def review_months(category_source: str, config: dict) -> int:
     review_type_map으로 한 번 접은 뒤 개월 수를 찾는다. 표에 없는 유형은
     default_review_months.
     """
-    low = _low(category_source)
-    std = {k.lower(): v for k, v in config.get("review_type_map", {}).items()}.get(low)
+    std = _std_type(category_source, config)
     table = {k.lower(): v for k, v in config.get("review_months_by_type", {}).items()}
     if std and _low(std) in table:
         return int(table[_low(std)])
@@ -505,8 +524,6 @@ def build_records(ws: Worksheet, cols: SourceColumns, config: dict) -> list[Reco
     passthrough = {c.lower() for c in config.get("category_passthrough", [])}
     explicit = {k.lower(): v for k, v in config.get("category_map", {}).items()}
     fallback = config.get("category_fallback", "Others")
-    leads = {k.lower(): v for k, v in config.get("lead_months_by_category", {}).items()}
-    default_lead = int(config.get("default_lead_months", 3))
     name_mode = config.get("project_name_mode", "verbatim")
     max_chars = int(config.get("project_name_max_chars", 60))
 
@@ -538,7 +555,9 @@ def build_records(ws: Worksheet, cols: SourceColumns, config: dict) -> list[Reco
                 dates[f"{ph}_{kind}"] = val
                 origins[f"{ph}_{kind}"] = origin
 
-        lead = leads.get(cat_src.lower(), default_lead)
+        # 준비기간(연한 색): 자료 인도 → 제출. 표준 유형별 개월 수만큼 제출일
+        # 앞으로 물린다. PRA·NDA 두 구간에 같은 길이를 적용한다.
+        lead = prep_months(cat_src, config)
         prep = {
             f"{ph}_prep": (add_months(dates[f"{ph}_sub"], -lead)
                            if dates[f"{ph}_sub"] else None)
@@ -1264,11 +1283,14 @@ def write_into_template(template_path, records: list[Record], output_path,
     # 미리보기가 엑셀과 똑같은 색을 보여줄 수 있도록 팔레트를 화면용 색으로 변환.
     # 키는 화면에 실제로 찍히는 Category(원본 그대로)로 맞춘다. 채색과 같은
     # resolve_fills를 써서 뽑으므로 미리보기 색과 엑셀 색이 어긋날 수 없다.
+    # 이 간트에 실제로 등장하는 Category만 담는다. palette_to_css로 팔레트를
+    # 통째로 넘기면 간트 양식이 쓰던 접힌 이름(Others, NDA (variant), Device)이
+    # 범례에 섞여 나온다 — RA plan에는 없는 이름이라 보는 사람이 혼란스럽다.
     theme_rgb = read_theme_colors(wb)
-    css_palette = palette_to_css(palette, theme_rgb)
+    css_palette: dict[str, dict[str, str]] = {}
     for rec in records:
         cat = _low(rec.category_source)
-        if cat in css_palette:
+        if not cat or cat in css_palette:
             continue
         p, rv = resolve_fills(rec, config, palette)
         css_palette[cat] = {"prep": fill_to_css(p, theme_rgb) or "#DDDDDD",
