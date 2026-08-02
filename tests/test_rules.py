@@ -208,9 +208,17 @@ def test_diff_and_sort() -> None:
     d = diff_records(previous, usable)
     check("빠져 있던 1건이 신규", d["summary"]["added"], 1)
     check("날짜 바뀐 1건이 일정변동", d["summary"]["moved"], 1)
-    check("행 신원은 제품+과제명",
+    check("행 신원은 제품+과제명+유형",
           record_key(usable[0]),
-          f"{usable[0].product.lower()}|{usable[0].project.lower()}")
+          f"{usable[0].product.lower()}|{usable[0].project.lower()}"
+          f"|{usable[0].category.lower()}")
+
+    # 같은 파일을 두 번 넣으면 변경이 하나도 없어야 한다.
+    # 예전에는 여기서 '일정변경 243건'이 나왔다 — 과제명이 빈 RA plan에서
+    # 제품명만으로 행을 구별하려다 수십 건이 한 키로 뭉갠 탓이다.
+    same = diff_records([r.to_dict() for r in usable], usable)
+    check("같은 내용이면 변경 0", same["summary"],
+          {"added": 0, "moved": 0, "status_changed": 0, "removed": 0})
 
     resp = [r.responsible for r in usable if r.responsible]
     check("담당자순 정렬됨", resp == sorted(resp), True)

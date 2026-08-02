@@ -129,6 +129,10 @@
     ""
   ],
   "_tokens_note": "실측 빈도: N/A 1508건, TBD 858건, TBU 39건, Not required 8건, done 2건.",
+  "users": [
+    "이효주"
+  ],
+  "_users_note": "간트를 돌리는 사람 목록. 화면 드롭다운에 이 순서로 뜬다. 인증이 아니라 '누가 돌렸는지' 라벨이다 — 이력은 사람별로 나뉘지 않고 하나를 공유한다. 팀이 늘면 이 배열에 이름만 추가하면 된다.",
   "known_categories": [
     "NDA",
     "New indication",

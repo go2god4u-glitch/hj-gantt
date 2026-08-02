@@ -1128,8 +1128,28 @@ def _paint_row(ws: Worksheet, row: int, rec: Record, month_cols: dict[int, date]
 # 정렬 · 변경 감지
 # ───────────────────────────────────────────────────────────────────────
 def record_key(rec: Record) -> str:
-    """행의 신원. 행 번호는 팀원이 중간에 끼워 넣으면 밀리므로 제품+과제명으로 본다."""
-    return f"{_low(rec.product)}|{_low(rec.project)}"
+    """행의 신원. 행 번호는 팀원이 중간에 끼워 넣으면 밀리므로 내용으로 본다."""
+    return f"{_low(rec.product)}|{_low(rec.project)}|{_low(rec.category)}"
+
+
+def _key_of_row(row: dict) -> str:
+    """저장된 이전 행에서 같은 규칙으로 키를 뽑는다."""
+    return (f"{_low(row.get('product'))}|{_low(row.get('project'))}"
+            f"|{_low(row.get('category'))}")
+
+
+def _sig_row(row: dict) -> tuple:
+    """저장된 이전 행의 '내용 지문' — 날짜 4개 + 상태."""
+    return tuple(_norm(row.get(f)) for f in DATE_FIELDS) + (_norm(row.get("status")),)
+
+
+def _sig_rec(rec: Record) -> tuple:
+    """이번 행의 내용 지문. _sig_row와 같은 모양이어야 비교가 된다."""
+    vals = []
+    for f in DATE_FIELDS:
+        v = getattr(rec, f)
+        vals.append(v.isoformat() if v else "")
+    return tuple(vals) + (_norm(rec.status),)
 
 
 def sort_records(records: list[Record], config: dict) -> list[Record]:
@@ -1160,31 +1180,59 @@ def diff_records(previous: list[dict], current: list[Record]) -> dict:
 
     매니저가 알고 싶은 것은 '간트 파일'이 아니라 '지난번 이후 무엇이 바뀌었나'다.
     """
-    prev = {f"{_low(p.get('product'))}|{_low(p.get('project'))}": p for p in previous}
-    seen, added, moved, status_changed = set(), [], [], []
+    prev_groups: dict[str, list[dict]] = {}
+    for p in previous:
+        prev_groups.setdefault(_key_of_row(p), []).append(p)
+    cur_groups: dict[str, list[Record]] = {}
+    for r in current:
+        cur_groups.setdefault(record_key(r), []).append(r)
 
-    for rec in current:
-        k = record_key(rec)
-        seen.add(k)
-        old = prev.get(k)
-        if old is None:
-            added.append(rec.to_dict())
-            continue
-        changes = {}
-        for f_ in DATE_FIELDS:
-            o = old.get(f_)
-            n = getattr(rec, f_)
-            n = n.isoformat() if n else None
-            if o != n:
-                changes[f_] = {"from": o, "to": n}
-        if changes:
-            moved.append({**rec.to_dict(), "date_changes": changes})
-        if _norm(old.get("status")) != _norm(rec.status):
-            status_changed.append({**rec.to_dict(),
-                                   "from_status": old.get("status"),
-                                   "to_status": rec.status})
+    added, moved, status_changed, removed = [], [], [], []
 
-    removed = [p for k, p in prev.items() if k not in seen]
+    for key, recs in cur_groups.items():
+        pool = prev_groups.pop(key, [])
+
+        # ① 내용이 똑같은 것부터 짝지어 없앤다.
+        #    같은 키를 가진 행이 여럿일 때(과제명이 빈 RA plan에서는 흔하다)
+        #    순번으로만 짝지으면, 그 그룹에서 한 행이 삭제되는 순간 뒤 순번이
+        #    전부 한 칸씩 밀려 멀쩡한 행들이 '일정 변경'으로 둔갑한다.
+        #    실제로 1건 수정에 4건이 잡혔다. 그래서 안 바뀐 것을 먼저 걷어낸다.
+        by_sig: dict[tuple, list[int]] = {}
+        for i, p in enumerate(pool):
+            by_sig.setdefault(_sig_row(p), []).append(i)
+        used = [False] * len(pool)
+        leftover_recs = []
+        for rec in recs:
+            idxs = by_sig.get(_sig_rec(rec))
+            if idxs:
+                used[idxs.pop(0)] = True          # 변경 없음
+            else:
+                leftover_recs.append(rec)
+        leftover_prev = [p for i, p in enumerate(pool) if not used[i]]
+
+        # ② 남은 것끼리 순서대로 짝짓는다. 여기 남은 것만 실제 변경이다.
+        for i, rec in enumerate(leftover_recs):
+            if i >= len(leftover_prev):
+                added.append(rec.to_dict())
+                continue
+            old = leftover_prev[i]
+            changes = {}
+            for f_ in DATE_FIELDS:
+                o = old.get(f_) or None
+                n = getattr(rec, f_)
+                n = n.isoformat() if n else None
+                if o != n:
+                    changes[f_] = {"from": o, "to": n}
+            if changes:
+                moved.append({**rec.to_dict(), "date_changes": changes})
+            if _norm(old.get("status")) != _norm(rec.status):
+                status_changed.append({**rec.to_dict(),
+                                       "from_status": old.get("status"),
+                                       "to_status": rec.status})
+        removed.extend(leftover_prev[len(leftover_recs):])
+
+    for pool in prev_groups.values():             # 키째로 사라진 것
+        removed.extend(pool)
     return {
         "added": added, "moved": moved,
         "status_changed": status_changed, "removed": removed,

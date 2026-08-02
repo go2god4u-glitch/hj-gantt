@@ -50,6 +50,7 @@ from flask import Flask, jsonify, render_template, request
 from werkzeug.utils import secure_filename
 
 import gantt_engine as engine
+import history
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -172,6 +173,11 @@ def _payload(result: dict, out_path: Path, out_name: str,
         "months": months,
         "rows": rows,
         "draw_prep": with_prep,
+        # 이력 관련 기본값. /generate가 실제 값으로 덮어쓴다. 자가검증처럼
+        # 이력을 남기지 않는 경로에서도 화면이 같은 필드를 기대하므로 둔다.
+        "history_enabled": history.enabled(),
+        "baseline": None,
+        "history": [],
     })
     return result
 
@@ -189,7 +195,18 @@ def too_large(_e):
 @app.route("/")
 def index():
     source = "내장 양식" if bundled_template() else None
-    return render_template("index.html", template_source=source)
+    return render_template("index.html", template_source=source,
+                           users=engine.load_config().get("users", []),
+                           history_enabled=history.enabled(),
+                           history=history.load_index())
+
+
+@app.route("/history", methods=["GET", "DELETE"])
+def history_endpoint():
+    """이력 조회 / 전체 삭제. 삭제하면 다음 실행이 새 기준선이 된다."""
+    if request.method == "DELETE":
+        return jsonify({"ok": history.clear()})
+    return jsonify({"enabled": history.enabled(), "history": history.load_index()})
 
 
 @app.route("/generate", methods=["POST"])
@@ -224,8 +241,26 @@ def generate():
             out_name = f"RA_gantt_{datetime.now():%Y%m%d_%H%M%S}.xlsx"
             out_path = workdir / out_name
 
-            result = engine.generate(ra_path, out_path, tpl_path, engine.load_config())
-            return jsonify(_payload(result, out_path, out_name, template_source))
+            # 기준선은 '지난번 실행'이다. 이력이 없으면 None을 넘겨 엔진 기본
+            # 동작(양식에서 읽기)에 맡긴다.
+            previous = history.previous_rows()
+            baseline = history.load_index()[:1]
+
+            result = engine.generate(ra_path, out_path, tpl_path,
+                                     engine.load_config(),
+                                     previous_rows=previous)
+            payload = _payload(result, out_path, out_name, template_source)
+
+            entry = history.record(
+                user=(request.form.get("user") or "").strip()[:40],
+                filename=secure_filename(ra_file.filename or ""),
+                rows=payload["rows"],
+                summary=result["changes"]["summary"],
+            )
+            payload["history_enabled"] = history.enabled()
+            payload["baseline"] = baseline[0] if baseline else None
+            payload["history"] = history.load_index() if entry else []
+            return jsonify(payload)
 
     except ValueError as e:
         return jsonify({"ok": False, "error": str(e)}), 400
